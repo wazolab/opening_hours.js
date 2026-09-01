@@ -57,7 +57,7 @@ export default function(value, nominatim_object, optional_conf_parm) {
     };
     const months   = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const weekdays = ['Su','Mo','Tu','We','Th','Fr','Sa'];
-    const INTL_DAY_MONTH_REF_DATE = new Date(2024, 2, 6); // fixed reference date for Intl.DateTimeFormat#formatToParts
+    const INTL_DAY_MONTH_REF_DATE = new Date(2024, 2, 6); // fixed reference date (2024-03-06, a Wednesday) for Intl.DateTimeFormat#formatToParts — Wednesday is needed to detect weekday-before-date order
     const string_to_token_map = {
         'su': [ 0, 'weekday' ],
         'mo': [ 1, 'weekday' ],
@@ -1482,41 +1482,36 @@ export default function(value, nominatim_object, optional_conf_parm) {
             }
         });
 
-        // Locale-aware day/month order and separator for month-day pairs.
-        // Uses Intl.DateTimeFormat#formatToParts to derive both the order (e.g. "6 mars" vs "March 6")
-        // and the literal separator (e.g. ". " for de, " de " for long es).
-        // Skipped for 'en' (always month-first) and 'all' ('all' is not a valid BCP 47 tag).
+        // Locale-aware ordering for day/month pairs and weekday position.
+        // A single Intl.DateTimeFormat call with weekday+day+month gives us all three values:
+        //   - day_before_month:  whether the day number precedes the month name (e.g. "6 mars" in fr vs "March 6" in en)
+        //   - day_month_sep:     the literal separator between day and month (e.g. ". " for de, " " for fr)
+        //   - weekday_before_date: whether the weekday precedes the date (e.g. "mer. 6 mars" in fr)
+        //   - weekday_date_sep:  the literal separator between weekday and day (e.g. ", " for de, " " for fr)
+        // Skipped for 'en' (always month-first, weekday-first) and 'all' ('all' is not a valid BCP 47 tag).
         const _is_en_or_all = user_conf['locale'] === 'en' || user_conf['locale'] === 'all';
-        let day_before_month = false;
-        let day_month_sep = ' ';
+        let day_before_month    = false;
+        let day_month_sep       = ' ';
+        let weekday_before_date = false;
+        let weekday_date_sep    = ' ';
         if (!_is_en_or_all) {
-            const dmParts = new Intl.DateTimeFormat(user_conf['locale'], { day: 'numeric', month: user_conf['date_format'] })
+            const localeParts = new Intl.DateTimeFormat(user_conf['locale'], { weekday: 'short', day: 'numeric', month: user_conf['date_format'] })
                 .formatToParts(INTL_DAY_MONTH_REF_DATE);
-            const dayIdx   = dmParts.findIndex(p => p.type === 'day');
-            const monthIdx = dmParts.findIndex(p => p.type === 'month');
-            day_before_month = dayIdx < monthIdx;
-            day_month_sep = dmParts
+            const wdIdx    = localeParts.findIndex(p => p.type === 'weekday');
+            const dayIdx   = localeParts.findIndex(p => p.type === 'day');
+            const monthIdx = localeParts.findIndex(p => p.type === 'month');
+
+            day_before_month    = dayIdx < monthIdx;
+            day_month_sep       = localeParts
                 .slice(Math.min(dayIdx, monthIdx) + 1, Math.max(dayIdx, monthIdx))
                 .map(p => p.value).join('');
-        }
-        user_conf['day_before_month'] = day_before_month;
-        user_conf['day_month_sep']    = day_month_sep;
-
-        // Locale-aware weekday position relative to a month-day pair.
-        // Uses Intl.DateTimeFormat#formatToParts to determine whether the weekday
-        // precedes the day number (e.g. "mer. 6 mars" in fr, "Mi., 6. März" in de).
-        let weekday_before_date = false;
-        let weekday_date_sep = ' ';
-        if (!_is_en_or_all) {
-            const wdParts = new Intl.DateTimeFormat(user_conf['locale'], { weekday: 'short', day: 'numeric', month: user_conf['date_format'] })
-                .formatToParts(INTL_DAY_MONTH_REF_DATE);
-            const wdIdx  = wdParts.findIndex(p => p.type === 'weekday');
-            const dayIdx = wdParts.findIndex(p => p.type === 'day');
             weekday_before_date = wdIdx < dayIdx;
-            weekday_date_sep = wdParts
+            weekday_date_sep    = localeParts
                 .slice(Math.min(wdIdx, dayIdx) + 1, Math.max(wdIdx, dayIdx))
                 .map(p => p.value).join('');
         }
+        user_conf['day_before_month']    = day_before_month;
+        user_conf['day_month_sep']       = day_month_sep;
         user_conf['weekday_before_date'] = weekday_before_date;
         user_conf['weekday_date_sep']    = weekday_date_sep;
 
@@ -1592,6 +1587,10 @@ export default function(value, nominatim_object, optional_conf_parm) {
 
             const old_prettified_value_length = prettified_value.length;
 
+            // Snapshot the sorted (but not locale-swapped) order for the warning check below,
+            // so the weekday reordering is not mistaken for a user-authored ordering error.
+            const sorted_prettified_group_value = prettified_group_value.slice();
+
             // For locales where the weekday precedes the date (e.g. fr, de, es),
             // swap adjacent month/weekday selector pairs so weekday is printed first.
             if (user_conf['weekday_before_date']) {
@@ -1604,24 +1603,34 @@ export default function(value, nominatim_object, optional_conf_parm) {
                 }
             }
 
-            prettified_value += prettified_group_value.map(function (array) {
-                return array[1];
-            }).join(' ');
+            // Join selectors, using the locale-specific weekday/date separator between
+            // an adjacent weekday+month pair when the weekday-before-date reorder is active.
+            prettified_value += prettified_group_value.reduce(function (acc, entry, i) {
+                if (i === 0) return entry[1];
+                const sep = (user_conf['weekday_before_date']
+                    && prettified_group_value[i-1][0][2] === 'weekday'
+                    && entry[0][2] === 'month')
+                    ? user_conf['weekday_date_sep']
+                    : ' ';
+                return acc + sep + entry[1];
+            }, '');
 
             prettified_value_array.push( prettified_group_value );
 
+            // Compare original vs sorted (not swapped) to detect user-authored ordering
+            // mistakes without flagging the locale-aware weekday reordering above.
             if (!done_with_selector_reordering_warnings) {
                 for (let i = 0, l = not_sorted_prettified_group_value.length; i < l; i++) {
-                    if (not_sorted_prettified_group_value[i] !== prettified_group_value[i]) {
-                        // console.log(i + ': ' + prettified_group_value[i][0][2]);
+                    if (not_sorted_prettified_group_value[i] !== sorted_prettified_group_value[i]) {
+                        // console.log(i + ': ' + sorted_prettified_group_value[i][0][2]);
                         let length = i + old_prettified_value_length; // i: Number of spaces in string.
                         for (let x = 0; x <= i; x++) {
-                            length += prettified_group_value[x][1].length;
-                            // console.log('Length: ' + length + ' ' + prettified_group_value[x][1]);
+                            length += sorted_prettified_group_value[x][1].length;
+                            // console.log('Length: ' + length + ' ' + sorted_prettified_group_value[x][1]);
                         }
                         // console.log(length);
                         parsing_warnings.push([ prettified_value, length, 'switched', t('switched', {
-                            'first': prettified_group_value[i][0][2],
+                            'first': sorted_prettified_group_value[i][0][2],
                             'second': not_sorted_prettified_group_value[i][0][2]
                         })
                         ]);

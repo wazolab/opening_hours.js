@@ -5877,7 +5877,7 @@ test.addPrettifyValue('Regression: prettifyValue should translate school holiday
 
 test.addPrettifyValue('prettifyValue should translate weekday and month tokens in a mixed selector', [
         'Jan Mo off',
-    ], 'de', 'Jan Mo geschlossen');
+    ], 'de', 'Mo, Jan geschlossen');
 
 test.addPrettifyValue('Compare prettifyValue', [
         'märz',
@@ -5946,8 +5946,8 @@ test.addPrettifyValue('locale-aware day/month order: month range without day una
 test.addPrettifyValue('locale-aware day/month order (es)', ['Jan 06-Jul 15'], 'es', '6 ene-15 jul', 'not only test');
 // locale-aware weekday position: weekday precedes date for non-English locales
 test.addPrettifyValue('locale-aware weekday before date (fr)', ['Oct 01 Th 06:00-16:30'], 'fr', 'jeu. 1 oct. 06:00-16:30', 'not only test');
-test.addPrettifyValue('locale-aware weekday before date (de)', ['Oct 01 Th 06:00-16:30'], 'de', 'Do 1. Okt 06:00-16:30', 'not only test');
-test.addPrettifyValue('locale-aware weekday before date (es)', ['Oct 01 Th 06:00-16:30'], 'es', 'jue 1 oct 06:00-16:30', 'not only test');
+test.addPrettifyValue('locale-aware weekday before date (de)', ['Oct 01 Th 06:00-16:30'], 'de', 'Do, 1. Okt 06:00-16:30', 'not only test');
+test.addPrettifyValue('locale-aware weekday before date (es)', ['Oct 01 Th 06:00-16:30'], 'es', 'jue, 1 oct 06:00-16:30', 'not only test');
 test.addPrettifyValue('locale-aware weekday before month range (fr)', ['Mar-Jul Mo-Fr 10:00-12:00'], 'fr', 'lun.-ven. mars-juil. 10:00-12:00', 'not only test');
 test.addPrettifyValue('locale-aware weekday before date unaffected for en', ['Oct 01 Th 06:00-16:30'], 'en', 'Oct 01 Th 06:00-16:30', 'not only test');
 

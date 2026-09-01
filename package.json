@@ -1,9 +1,9 @@
 {
-  "name": "opening_hours",
+  "name": "@noe-teritorio/opening_hours",
   "type": "commonjs",
   "types": "./types/index.d.ts",
   "description": "Library to parse and process opening_hours tag from OpenStreetMap data",
-  "version": "3.14.0",
+  "version": "3.14.3",
   "main": "./build/opening_hours.js",
   "module": "./build/opening_hours.esm.mjs",
   "sideEffects": false,
